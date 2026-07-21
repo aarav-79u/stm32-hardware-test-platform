@@ -1,1 +1,22 @@
 
+# STM32 build output
+Debug/
+Release/
+
+# Object and dependency files
+*.o
+*.d
+*.su
+*.cyclo
+
+# Executables
+*.exe
+*.elf
+*.map
+*.list
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
