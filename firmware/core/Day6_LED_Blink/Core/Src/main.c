@@ -44,6 +44,17 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
+uint32_t lastBlinkTime = 0;
+uint32_t blinkInterval = 500;
+
+uint32_t lastDebounceTime = 0;
+uint32_t debounceInterval = 30;
+
+GPIO_PinState lastRawButtonState = GPIO_PIN_RESET;
+GPIO_PinState stableButtonState = GPIO_PIN_RESET;
+
+uint32_t buttonCount = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -91,6 +102,8 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -99,18 +112,48 @@ int main(void)
 
   while (1)
   {
-    /* USER CODE END WHILE */
+      uint32_t currentTime = HAL_GetTick();
 
-    /* USER CODE BEGIN 3 */
-	  if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET)
-	  {
-	      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);
-	  }
-	  else
-	  {
-	      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
-	  }
+      /*
+       * Task 1:
+       * Check whether blinkInterval milliseconds have passed.
+       * If so:
+       *   - update lastBlinkTime
+       *   - toggle the LED
+       */
 
+
+      if ((currentTime - lastBlinkTime) >= blinkInterval)
+      {
+    	  lastBlinkTime = currentTime;
+    	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+      }
+
+      /* Read the current button state */
+      GPIO_PinState rawButtonState = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0);
+
+      /* If the raw state changed, restart the debounce timer */
+      if (rawButtonState != lastRawButtonState)
+      {
+          lastDebounceTime = currentTime;
+          lastRawButtonState = rawButtonState;
+      }
+
+      /* Has the button remained stable long enough? */
+      if ((currentTime - lastDebounceTime) >= debounceInterval)
+      {
+          /* Has the stable state actually changed? */
+          if (rawButtonState != stableButtonState)
+          {
+              stableButtonState = rawButtonState;
+
+              /* Count only a confirmed button press */
+              if (stableButtonState == GPIO_PIN_SET)
+              {
+                  buttonCount++;
+              }
+          }
+      }
   }
   /* USER CODE END 3 */
 }
@@ -224,7 +267,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : PA0 */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PA6 */
