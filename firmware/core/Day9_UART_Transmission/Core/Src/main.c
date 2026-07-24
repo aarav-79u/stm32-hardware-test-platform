@@ -22,6 +22,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include <string.h>
+#include <stdio.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,11 +50,14 @@ UART_HandleTypeDef huart2;
 uint32_t lastBlinkTime = 0;
 uint32_t blinkInterval = 500;
 
+uint32_t lastStatusTime = 0;
+uint32_t statusInterval = 1000;
+
 uint32_t lastDebounceTime = 0;
 uint32_t debounceInterval = 30;
 
-GPIO_PinState lastRawButtonState = GPIO_PIN_RESET;
-GPIO_PinState stableButtonState = GPIO_PIN_RESET;
+GPIO_PinState lastRawButtonState = GPIO_PIN_SET;
+GPIO_PinState stableButtonState = GPIO_PIN_SET;
 
 uint32_t buttonCount = 0;
 
@@ -62,7 +68,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+void UART_Print(const char *message);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -101,60 +107,81 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+  lastStatusTime = HAL_GetTick();
+  /* Read the actual startup state of the button */
+  lastRawButtonState = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0);
+  stableButtonState = lastRawButtonState;
 
+  /* Record the starting time */
+  lastBlinkTime = HAL_GetTick();
+  lastDebounceTime = HAL_GetTick();
 
+  char startupMessage[] = "System started\r\n";
+  UART_Print(startupMessage);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-
-
   while (1)
   {
-      uint32_t currentTime = HAL_GetTick();
+	  uint32_t currentTime = HAL_GetTick();
 
-      /*
-       * Task 1:
-       * Check whether blinkInterval milliseconds have passed.
-       * If so:
-       *   - update lastBlinkTime
-       *   - toggle the LED
-       */
+	      /* Blink LED every 500 ms */
+	      if ((currentTime - lastBlinkTime) >= blinkInterval)
+	      {
+	          lastBlinkTime = currentTime;
+	          HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+	      }
 
+	      /* Read button */
+	      GPIO_PinState rawButtonState =
+	          HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0);
 
-      if ((currentTime - lastBlinkTime) >= blinkInterval)
-      {
-    	  lastBlinkTime = currentTime;
-    	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-      }
+	      /* Restart debounce timer if state changes */
+	      if (rawButtonState != lastRawButtonState)
+	      {
+	          lastRawButtonState = rawButtonState;
+	          lastDebounceTime = currentTime;
+	      }
 
-      /* Read the current button state */
-      GPIO_PinState rawButtonState = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0);
+	      /* Confirm stable button state */
+	      if ((currentTime - lastDebounceTime) >= debounceInterval)
+	      {
+	          if (rawButtonState != stableButtonState)
+	          {
+	              stableButtonState = rawButtonState;
 
-      /* If the raw state changed, restart the debounce timer */
-      if (rawButtonState != lastRawButtonState)
-      {
-          lastDebounceTime = currentTime;
-          lastRawButtonState = rawButtonState;
-      }
+	              if (stableButtonState == GPIO_PIN_RESET)
+	              {
+	                  buttonCount++;
+	              }
+	          }
+	      }
 
-      /* Has the button remained stable long enough? */
-      if ((currentTime - lastDebounceTime) >= debounceInterval)
-      {
-          /* Has the stable state actually changed? */
-          if (rawButtonState != stableButtonState)
-          {
-              stableButtonState = rawButtonState;
+	      /* Send status once every second */
+	      if ((currentTime - lastStatusTime) >= statusInterval)
+	      {
+	          lastStatusTime = currentTime;
 
-              /* Count only a confirmed button press */
-              if (stableButtonState == GPIO_PIN_SET)
-              {
-                  buttonCount++;
-              }
-          }
-      }
-  }
+	          char message[128];
+
+	          GPIO_PinState ledState =
+	              HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6);
+
+	          snprintf(
+	              message,
+	              sizeof(message),
+	              "Counter: %lu | Button: %s | LED: %s\r\n",
+				  (unsigned long)buttonCount,
+	              (stableButtonState == GPIO_PIN_RESET) ? "PRESSED" : "RELEASED",
+	              (ledState == GPIO_PIN_SET) ? "ON" : "OFF"
+	          );
+
+	          UART_Print(message);
+	      }
+	  }
+
   /* USER CODE END 3 */
 }
 
@@ -267,7 +294,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : PA0 */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PA6 */
@@ -283,6 +310,15 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void UART_Print(const char *message)
+{
+    HAL_UART_Transmit(
+        &huart2,
+        (uint8_t *)message,
+        strlen(message),
+        HAL_MAX_DELAY
+    );
+}
 
 /* USER CODE END 4 */
 
